@@ -4,7 +4,9 @@ const { v4: uuidv4 } = require('uuid');
 AWS.config.update({ region: 'us-east-1' });
 
 const sqs = new AWS.SQS({ apiVersion: '2012-11-05' });
-const QUEUE_URL = process.env.SQS_QUEUE_URL || 'YOUR_SQS_QUEUE_URL'; // Replace after creation or set env var
+// Default to the queue URL you provided; allow override with SQS_QUEUE_URL env var
+const DEFAULT_QUEUE_URL = 'https://sqs.us-east-2.amazonaws.com/915198917063/fraud-transactions-queue';
+const QUEUE_URL = process.env.SQS_QUEUE_URL || DEFAULT_QUEUE_URL;
 
 function generateTransaction() {
   return {
@@ -24,8 +26,11 @@ async function sendToQueue(dryRun = false) {
     MessageBody: JSON.stringify(transaction)
   };
 
-  if (dryRun || QUEUE_URL === 'YOUR_SQS_QUEUE_URL') {
-    console.log('[dry-run] Generated message (not sent):', transaction);
+  // Basic credentials check — avoid attempting to send if AWS credentials are not configured
+  const hasAwsCreds = process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY;
+  if (dryRun || !hasAwsCreds) {
+    console.log('[dry-run] Generated message (not sent):', transaction, { queuedFor: QUEUE_URL });
+    if (!hasAwsCreds) console.log('[info] AWS credentials not found in env — set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY to send.');
     return;
   }
 
