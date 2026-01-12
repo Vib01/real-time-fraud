@@ -1,0 +1,47 @@
+import json
+import boto3
+import random
+from datetime import datetime
+# AWS clients
+sqs = boto3.client('sqs', region_name='us-east-2')
+cloudwatch = boto3.client('cloudwatch', region_name='us-east-2') 
+
+QUEUE_URL = ''
+
+def lambda_handler(event, context):
+    # 90% normal, 10% high-value transactions
+    if random.random() < 0.9:
+        amount = random.randint(10, 400)  # normal
+    else:
+        amount = random.randint(500, 2000)  # potentially suspicious
+
+    transaction = {
+        'transaction_id': f"tx{random.randint(1000,9999)}",
+        'amount': amount
+    }
+
+    response = sqs.send_message(
+        QueueUrl=QUEUE_URL,
+        MessageBody=json.dumps(transaction)
+    )
+    
+    print("Generated transaction:", transaction)
+    print("SQS response:", response)
+    # Send to SQS
+    sqs.send_message(QueueUrl=QUEUE_URL, MessageBody=json.dumps(transaction))
+    print("Generated transaction:", transaction)
+
+    # Push metric to CloudWatch
+    cloudwatch.put_metric_data(
+        Namespace="FraudDetection",
+        MetricData=[{
+            "MetricName": "TotalTransactions",
+            "Value": 1,
+            "Unit": "Count",
+            "Timestamp": datetime.utcnow()
+        }]
+    )
+    return {
+        'statusCode': 200,
+        'body': json.dumps(transaction)
+    }
