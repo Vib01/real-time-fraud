@@ -1,0 +1,67 @@
+import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
+import { SNSClient, PublishCommand } from "@aws-sdk/client-sns";
+import { CloudWatchClient, PutMetricDataCommand } from "@aws-sdk/client-cloudwatch";
+
+// AWS clients
+const dynamodb = new DynamoDBClient({});
+const sns = new SNSClient({});
+const cloudwatch = new CloudWatchClient({});
+
+// Env variables
+const TABLE_NAME = process.env.TRANSACTION_TABLE || "FraudTransactions";
+const FRAUD_TOPIC = process.env.FRAUD_ALERT_TOPIC || 
+  "paste your arn for fraud alert";
+
+export const handler = async (event) => {
+  for (const record of event.Records) {
+    try {
+      const message = JSON.parse(record.body);
+      const { transaction_id, amount } = message;
+
+      console.log("Processing transaction:", message);
+
+      // Fraud scoring with some randomness
+      let fraudScore = amount / 2000;       // base: amount / max
+      fraudScore += Math.random() * 0.1;    // small randomness
+      if (fraudScore > 1) fraudScore = 1;
+
+      const isFraud = fraudScore > 0.7;
+
+      console.log(`Fraud Score: ${fraudScore.toFixed(2)}, Fraud detected: ${isFraud}`);
+
+      // Store in DynamoDB
+      await dynamodb.send(new PutItemCommand({
+        TableName: TABLE_NAME,
+        Item: {
+          transaction_id: { S: transaction_id },
+          amount: { N: amount.toString() },
+          fraud_score: { N: fraudScore.toString() },
+          is_fraud: { BOOL: isFraud },
+          timestamp: { S: new Date().toISOString() }
+        }
+      }));
+
+      // SNS alert for fraud
+      if (isFraud) {
+        await sns.send(new PublishCommand({
+          TopicArn: FRAUD_TOPIC,
+          Message: `🚨 Fraud Alert! Transaction ${transaction_id} flagged with score ${fraudScore.toFixed(2)}`,
+        }));
+      }
+
+      // CloudWatch metrics
+      await cloudwatch.send(new PutMetricDataCommand({
+        Namespace: "FraudDetection",
+        MetricData: [
+          { MetricName: "TotalTransactions", Value: 1, Unit: "Count" },
+          { MetricName: "FraudulentTransactions", Value: isFraud ? 1 : 0, Unit: "Count" }
+        ]
+      }));
+
+    } catch (err) {
+      console.error("Error processing message:", err.message, "Raw message:", record.body);
+    }
+  }
+
+  return { statusCode: 200, body: "Processed all records" };
+};
