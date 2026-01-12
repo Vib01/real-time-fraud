@@ -1,0 +1,88 @@
+# for Cloudwatch Metrics Data
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Sid": "Statement1",
+			"Effect": "Allow",
+			"Action": "cloudwatch:PutMetricData",
+			"Resource": "*"
+		}
+	]
+}
+
+# For delete message 
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Action": "sqs:DeleteMessage",
+			"Resource": "arn*"
+		}
+	]
+}
+
+# forGet attribute 
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Action": "sqs:GetQueueAttributes",
+			"Resource": "arn:*"
+		}
+	]
+
+#For recieving message 
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Sid": "Statement1",
+			"Effect": "Allow",
+			"Action": "sqs:ReceiveMessage",
+			"Resource": "arn*"
+		}
+	]
+}
+
+#for Send message 
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Action": "sqs:SendMessage",
+			"Resource": "arn:*"
+		}
+	]
+}
+
+# for Publishing SNS
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Action": "sns:Publish",
+			"Resource": "arn: make a fraud Alert SNS"
+		
+	]
+}
+# for Dynomo DB (to get a dataset)
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Sid": "Statement1",
+			"Effect": "Allow",
+			"Action": [
+				"dynamodb:PutItem",
+				"dynamodb:UpdateItem"
+			],
+			"Resource": "arn:aws:dynamodb"
+		}
+	]
+}
+}
