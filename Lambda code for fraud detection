@@ -1,0 +1,62 @@
+import json
+import boto3
+import os
+from decimal import Decimal, InvalidOperation
+
+sqs = boto3.client("sqs", region_name="us-east-2")
+
+SCORING_QUEUE_URL = os.environ.get(
+    "SCORING_QUEUE_URL",
+    "your own scoring queue"
+)
+
+MAX_NORMAL_AMOUNT = 500
+
+def lambda_handler(event, context):
+    for record in event.get("Records", []):
+        try:
+            message = json.loads(record["body"])
+            print("Incoming Transaction:", message)
+
+            fraud_reasons = []
+            fraud_score = 0
+
+            if "amount" not in message:
+                fraud_reasons.append("MISSING_AMOUNT")
+                fraud_score += 100
+            else:
+                try:
+                    amount = Decimal(str(message["amount"]))
+                except (InvalidOperation, TypeError):
+                    fraud_reasons.append("INVALID_AMOUNT_FORMAT")
+                    fraud_score += 100
+                else:
+                    if amount < 0:
+                        fraud_reasons.append("NEGATIVE_AMOUNT")
+                        fraud_score += 70
+                    if amount > MAX_NORMAL_AMOUNT:
+                        fraud_reasons.append("HIGH_VALUE")
+                        fraud_score += 50
+
+            if fraud_reasons:
+                message["fraud"] = True
+                message["fraud_score"] = min(fraud_score, 100)
+                message["fraud_reasons"] = fraud_reasons
+
+                sqs.send_message(
+                    QueueUrl=SCORING_QUEUE_URL,
+                    MessageBody=json.dumps(message)
+                )
+
+                print("🚨 FRAUD DETECTED 🚨", message)
+            else:
+                print("Transaction is normal:", message)
+
+        except json.JSONDecodeError:
+            print("Invalid JSON:", record.get("body"))
+
+        except Exception as e:
+            print("🔥 HARD FAILURE 🔥", str(e))
+            raise
+
+    return {"statusCode": 200}
