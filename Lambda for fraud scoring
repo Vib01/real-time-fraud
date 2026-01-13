@@ -34,7 +34,7 @@ export const handler = async (event) => {
       else if (fraudScore < HIGH_THRESHOLD) riskLabel = "HIGH";
       else riskLabel = "CRITICAL";
 
-      const isFraud = fraudScore > 0.7;
+      const isFraud = fraudScore > HIGH_THRESHOLD;
 
       console.log(`Fraud Score: ${fraudScore.toFixed(2)}, Risk Level: ${riskLabel}, Fraud detected: ${isFraud}`);
 
@@ -63,12 +63,21 @@ export const handler = async (event) => {
       await cloudwatch.send(new PutMetricDataCommand({
         Namespace: "FraudDetection",
         MetricData: [
-          { MetricName: "TotalTransactions", Value: 1, Unit: "Count" },
-          { MetricName: "FraudulentTransactions", Value: isFraud ? 1 : 0, Unit: "Count" },
-          { MetricName: `Transactions_${riskLabel}`, Value: 1, Unit: "Count" } // tiered metric
+          {
+            MetricName: "TotalTransactions",
+            Value: 1,
+            Unit: "Count"
+          },
+          {
+            MetricName: "TransactionsByRisk",
+            Dimensions: [
+              { Name: "RiskTier", Value: riskLabel }
+            ],
+            Value: 1,
+            Unit: "Count"
+          }
         ]
       }));
-
     } catch (err) {
       console.error("Error processing message:", err.message, "Raw message:", record.body);
     }
