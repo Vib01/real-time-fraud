@@ -1,16 +1,18 @@
+// Add thresholds
+const LOW_THRESHOLD = 0.3;
+const MEDIUM_THRESHOLD = 0.5;
+const HIGH_THRESHOLD = 0.7;
 import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
+
+
 import { SNSClient, PublishCommand } from "@aws-sdk/client-sns";
-import { CloudWatchClient, PutMetricDataCommand } from "@aws-sdk/client-cloudwatch";
-
-// AWS clients
-const dynamodb = new DynamoDBClient({});
-const sns = new SNSClient({});
-const cloudwatch = new CloudWatchClient({});
-
-// Env variables
-const TABLE_NAME = process.env.TRANSACTION_TABLE || "FraudTransactions";
-const FRAUD_TOPIC = process.env.FRAUD_ALERT_TOPIC || 
-  "paste your arn for fraud alert";
+ import { CloudWatchClient, PutMetricDataCommand } from "@aws-sdk/client-cloudwatch";
+  // AWS clients
+   const dynamodb = new DynamoDBClient({});
+   const sns = new SNSClient({}); const cloudwatch = new CloudWatchClient({});
+    // Env variables 
+    const TABLE_NAME = process.env.TRANSACTION_TABLE || "FraudTransactions"; 
+    const FRAUD_TOPIC = process.env.FRAUD_ALERT_TOPIC || "arn:aws:sns:us-east-2:915198917063:FraudAlerts";
 
 export const handler = async (event) => {
   for (const record of event.Records) {
@@ -20,14 +22,21 @@ export const handler = async (event) => {
 
       console.log("Processing transaction:", message);
 
-      // Fraud scoring with some randomness
+      // Fraud scoring
       let fraudScore = amount / 2000;       // base: amount / max
       fraudScore += Math.random() * 0.1;    // small randomness
       if (fraudScore > 1) fraudScore = 1;
 
+      // Decision tiering
+      let riskLabel;
+      if (fraudScore < LOW_THRESHOLD) riskLabel = "LOW";
+      else if (fraudScore < MEDIUM_THRESHOLD) riskLabel = "MEDIUM";
+      else if (fraudScore < HIGH_THRESHOLD) riskLabel = "HIGH";
+      else riskLabel = "CRITICAL";
+
       const isFraud = fraudScore > 0.7;
 
-      console.log(`Fraud Score: ${fraudScore.toFixed(2)}, Fraud detected: ${isFraud}`);
+      console.log(`Fraud Score: ${fraudScore.toFixed(2)}, Risk Level: ${riskLabel}, Fraud detected: ${isFraud}`);
 
       // Store in DynamoDB
       await dynamodb.send(new PutItemCommand({
@@ -36,16 +45,17 @@ export const handler = async (event) => {
           transaction_id: { S: transaction_id },
           amount: { N: amount.toString() },
           fraud_score: { N: fraudScore.toString() },
+          risk_label: { S: riskLabel },           // new field
           is_fraud: { BOOL: isFraud },
           timestamp: { S: new Date().toISOString() }
         }
       }));
 
-      // SNS alert for fraud
-      if (isFraud) {
+      // Actions per tier
+      if (["HIGH", "CRITICAL"].includes(riskLabel)) {
         await sns.send(new PublishCommand({
           TopicArn: FRAUD_TOPIC,
-          Message: `🚨 Fraud Alert! Transaction ${transaction_id} flagged with score ${fraudScore.toFixed(2)}`,
+          Message: `🚨 ${riskLabel} Risk! Transaction ${transaction_id} flagged with score ${fraudScore.toFixed(2)}`
         }));
       }
 
@@ -54,7 +64,8 @@ export const handler = async (event) => {
         Namespace: "FraudDetection",
         MetricData: [
           { MetricName: "TotalTransactions", Value: 1, Unit: "Count" },
-          { MetricName: "FraudulentTransactions", Value: isFraud ? 1 : 0, Unit: "Count" }
+          { MetricName: "FraudulentTransactions", Value: isFraud ? 1 : 0, Unit: "Count" },
+          { MetricName: `Transactions_${riskLabel}`, Value: 1, Unit: "Count" } // tiered metric
         ]
       }));
 
